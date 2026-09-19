@@ -1,47 +1,114 @@
 # CloudForge
 
-A Node/TypeScript deploy platform: point at a git repo + Dockerfile, and CloudForge builds and deploys it.
+Point CloudForge at a git repo and a Dockerfile. It builds the image and deploys it.
 
-**Status:** early scaffold. The first slice is a runnable API stub for the deploy path — not a full orchestrator yet.
+**Status:** scaffold. The HTTP API runs locally; `POST /deploy` accepts a job and returns a `jobId`. Clone, image build, and ship are not implemented yet.
 
-## What it does
+## Pipeline
 
-1. Accept a deploy request (`repo` + `Dockerfile`)
-2. Build the image
-3. Deploy the result
+1. **Accept** a deploy request (`repoUrl` + optional `dockerfilePath`)
+2. **Build** the image (`docker build`)
+3. **Deploy** the result
 
-Right now only the API shape and local health check exist. Real build/deploy comes next.
+This repo covers step 1 as a stub. Steps 2–3 are next.
 
 ## Stack
 
-- Node.js + TypeScript
-- HTTP API (Express)
-- Docker (target runtime for builds)
+| Layer | Choice |
+| --- | --- |
+| Runtime | Node.js 20+, TypeScript |
+| HTTP | Express |
+| Packages | pnpm |
+| Builds | Docker (target runtime; not invoked yet) |
 
 ## Quick start
 
+Requires Node.js 20+ and [pnpm](https://pnpm.io/installation).
+
 ```bash
-npm install
-npm run build
-npm start
+pnpm install
+pnpm build
+pnpm start
 ```
 
-## Health check:
+Listens on `http://localhost:3000`. Override with `PORT`.
 
-curl http://localhost:3000/health
-Deploy path (current stub)
+| Script | Command | Purpose |
+| --- | --- | --- |
+| Dev | `pnpm dev` | Run TypeScript directly |
+| Test | `pnpm test` | API checks (no server required) |
+| Build | `pnpm build` | Compile to `dist/` |
+| Start | `pnpm start` | Run the compiled server |
 
-Method	Path	Purpose
-GET	/health	Liveness
-POST	/deploy	Accept a deploy job (stub — queues/acknowledges only)
-Example:
+## API
 
+Base URL: `http://localhost:3000`
+
+### `GET /health`
+
+Liveness. `200`
+
+```json
+{ "status": "ok" }
+```
+
+```bash
+curl -s http://localhost:3000/health
+```
+
+### `POST /deploy`
+
+**Stub.** Validates the payload, assigns a `jobId`, returns `202 Accepted`. Does not clone the repo, build an image, or deploy anything.
+
+Request:
+
+```json
+{
+  "repoUrl": "https://github.com/example/app",
+  "dockerfilePath": "Dockerfile"
+}
+```
+
+`dockerfilePath` is optional; default is `Dockerfile`.
+
+`202 Accepted`:
+
+```json
+{
+  "jobId": "3f2c1a4e-8b91-4d2a-9c0e-1a2b3c4d5e6f",
+  "status": "accepted",
+  "repoUrl": "https://github.com/example/app",
+  "dockerfilePath": "Dockerfile",
+  "message": "Deploy job accepted. Image build and cloud deploy are not implemented in this scaffold."
+}
+```
+
+`400` when `repoUrl` is missing or not an `http(s)` URL:
+
+```json
+{ "error": "invalid_request", "message": "..." }
+```
+
+```bash
 curl -X POST http://localhost:3000/deploy \
   -H 'Content-Type: application/json' \
   -d '{"repoUrl":"https://github.com/example/app","dockerfilePath":"Dockerfile"}'
-  
-## Roadmap (visible milestones)
-Scaffold — runnable server, README, /health + stub /deploy ← this repo
-Build worker — clone repo, docker build, stream logs
-Deploy target — run container / push to a registry and ship
-Auth + multi-project — API keys, project records, status history
+```
+
+## Sample image
+
+The root `Dockerfile` is a hello-world Node service for docs and demos. CloudForge does not build or run it.
+
+```bash
+docker build -t cloudforge-sample .
+docker run --rm -p 8080:8080 cloudforge-sample
+```
+
+## Roadmap
+
+| Milestone | Scope |
+| --- | --- |
+| **Scaffold** ← now | Runnable server, `/health`, stub `/deploy` |
+| **Build worker** | Clone repo, `docker build`, stream logs |
+| **Deploy target** | Run the container or push to a registry |
+| **Auth + projects** | API keys, project records, status history |
