@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import express, { type Express } from "express";
+import {
+  createDefaultBuildRunner,
+  type BuildRunner,
+} from "./buildRunner.js";
+import { runBuildJob } from "./buildWorker.js";
+import { JobStore, toJobResponse } from "./jobs.js";
 
 export type DeployRequestBody = {
   repoUrl?: unknown;
@@ -15,11 +21,21 @@ export type DeployAcceptedResponse = {
 };
 
 export type ErrorResponse = {
-  error: "invalid_request";
+  error: "invalid_request" | "not_found";
   message: string;
 };
 
-export function createApp(): Express {
+export type CreateAppOptions = {
+  jobs?: JobStore;
+  runner?: BuildRunner;
+  workDir?: string;
+};
+
+export function createApp(options: CreateAppOptions = {}): Express {
+  const jobs = options.jobs ?? new JobStore();
+  const runner = options.runner ?? createDefaultBuildRunner();
+  const workDir = options.workDir ?? process.env.WORK_DIR ?? ".work";
+
   const app = express();
   app.use(express.json());
 
@@ -58,15 +74,40 @@ export function createApp(): Express {
     }
 
     const path = dockerfilePath?.trim() || "Dockerfile";
-    const body: DeployAcceptedResponse = {
+    const job = jobs.create({
       jobId: randomUUID(),
-      status: "accepted",
       repoUrl: repoUrl.trim(),
       dockerfilePath: path,
+    });
+
+    const body: DeployAcceptedResponse = {
+      jobId: job.jobId,
+      status: "accepted",
+      repoUrl: job.repoUrl,
+      dockerfilePath: job.dockerfilePath,
       message:
-        "Deploy job accepted. Image build and cloud deploy are not implemented in this scaffold.",
+        "Deploy job accepted. Image build started; cloud deploy is not implemented yet.",
     };
     res.status(202).json(body);
+
+    void runBuildJob({ job, jobs, runner, workDir }).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      jobs.appendLog(job.jobId, `Unhandled worker error: ${message}\n`);
+      jobs.fail(job.jobId, message);
+    });
+  });
+
+  app.get("/jobs/:jobId", (req, res) => {
+    const job = jobs.get(req.params.jobId as string);
+    if (!job) {
+      const body: ErrorResponse = {
+        error: "not_found",
+        message: "Unknown jobId",
+      };
+      res.status(404).json(body);
+      return;
+    }
+    res.status(200).json(toJobResponse(job));
   });
 
   return app;
