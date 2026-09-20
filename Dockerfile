@@ -1,5 +1,4 @@
-# Demo-only hello-world service. CloudForge does not build or deploy
-# this image in the current scaffold — it is here as a sample target.
+# Demo-only hello-world service. Sample target for the local build worker.
 FROM node:22-alpine
 
 EXPOSE 8080
